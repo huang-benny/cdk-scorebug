@@ -86,13 +86,15 @@ function PackageAnalyzer() {
   const [isConfigured, setIsConfigured] = useState(false);
 
   useEffect(() => {
-    Amplify.configure(outputs, { ssr: true });
-    setIsConfigured(true);
+    if (typeof window !== 'undefined') {
+      Amplify.configure(outputs, { ssr: true });
+      setIsConfigured(true);
+    }
   }, []);
 
   useEffect(() => {
     if (!isConfigured) return;
-    
+
     if (!packageName) {
       setError('No package specified. Add ?package=your-package-name to the URL');
       return;
