@@ -7,8 +7,6 @@ import outputs from '@/amplify_outputs.json';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import './styles.css';
 
-Amplify.configure(outputs);
-
 interface AnalysisData {
   packageName: string;
   version: string;
@@ -85,8 +83,16 @@ function PackageAnalyzer() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<AnalysisData | null>(null);
+  const [isConfigured, setIsConfigured] = useState(false);
 
   useEffect(() => {
+    Amplify.configure(outputs, { ssr: true });
+    setIsConfigured(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isConfigured) return;
+    
     if (!packageName) {
       setError('No package specified. Add ?package=your-package-name to the URL');
       return;
@@ -144,7 +150,7 @@ function PackageAnalyzer() {
     }
 
     analyzePackage();
-  }, [packageName]);
+  }, [packageName, isConfigured]);
 
   return (
     <div className="container">
