@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Amplify } from 'aws-amplify';
 import outputs from '@/amplify_outputs.json';
@@ -79,101 +79,75 @@ function CircularProgress({ score, size = 52, isTotal = false }: { score: number
   );
 }
 
-export default function Home() {
+function PackageAnalyzer() {
   const searchParams = useSearchParams();
-  const [packageName, setPackageName] = useState('');
+  const packageName = searchParams.get('package');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<AnalysisData | null>(null);
 
-  async function analyzePackage(pkgName?: string) {
-    const nameToAnalyze = pkgName || packageName;
-    if (!nameToAnalyze.trim()) {
-      setError('Please enter a package name');
+  useEffect(() => {
+    if (!packageName) {
+      setError('No package specified. Add ?package=your-package-name to the URL');
       return;
     }
 
-    setLoading(true);
-    setError(null);
-    setData(null);
+    async function analyzePackage() {
+      setLoading(true);
+      setError(null);
 
-    try {
-      const session = await fetchAuthSession();
-      
-      if (!session.credentials) {
-        throw new Error('Not authenticated');
+      try {
+        const session = await fetchAuthSession();
+
+        if (!session.credentials) {
+          throw new Error('Not authenticated');
+        }
+
+        const { LambdaClient, InvokeCommand } = await import('@aws-sdk/client-lambda');
+
+        const lambdaClient = new LambdaClient({
+          region: outputs.auth.aws_region,
+          credentials: session.credentials,
+        });
+
+        const functionArn = outputs.custom?.analyzePackageFunctionArn;
+
+        if (!functionArn) {
+          throw new Error('Lambda function ARN not found in outputs');
+        }
+
+        const command = new InvokeCommand({
+          FunctionName: functionArn,
+          Payload: JSON.stringify({ packageName: packageName?.trim() }),
+        });
+
+        const response = await lambdaClient.send(command);
+
+        if (response.FunctionError) {
+          throw new Error('Lambda function error: ' + response.FunctionError);
+        }
+
+        const payload = JSON.parse(new TextDecoder().decode(response.Payload));
+
+        if (payload.statusCode !== 200) {
+          const errorData = JSON.parse(payload.body);
+          throw new Error(errorData.message || 'Failed to analyze package');
+        }
+
+        const result = JSON.parse(payload.body);
+        setData(result.analysis);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Unknown error');
+      } finally {
+        setLoading(false);
       }
-
-      // Use AWS SDK to invoke Lambda directly
-      const { LambdaClient, InvokeCommand } = await import('@aws-sdk/client-lambda');
-      
-      const lambdaClient = new LambdaClient({
-        region: outputs.auth.aws_region,
-        credentials: session.credentials,
-      });
-
-      const functionArn = outputs.custom?.analyzePackageFunctionArn;
-      
-      if (!functionArn) {
-        throw new Error('Lambda function ARN not found in outputs');
-      }
-
-      const command = new InvokeCommand({
-        FunctionName: functionArn,
-        Payload: JSON.stringify({ packageName: nameToAnalyze.trim() }),
-      });
-
-      const response = await lambdaClient.send(command);
-      
-      if (response.FunctionError) {
-        throw new Error('Lambda function error: ' + response.FunctionError);
-      }
-
-      const payload = JSON.parse(new TextDecoder().decode(response.Payload));
-      
-      if (payload.statusCode !== 200) {
-        const errorData = JSON.parse(payload.body);
-        throw new Error(errorData.message || 'Failed to analyze package');
-      }
-
-      const result = JSON.parse(payload.body);
-      setData(result.analysis);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-    } finally {
-      setLoading(false);
     }
-  }
 
-  useEffect(() => {
-    const packageParam = searchParams.get('package');
-    if (packageParam) {
-      setPackageName(packageParam);
-      analyzePackage(packageParam);
-    }
-  }, [searchParams]);
+    analyzePackage();
+  }, [packageName]);
 
   return (
     <div className="container">
-      <div className="header">
-        <h1>CDK Construct Analyzer</h1>
-        <p>Analyze the quality of AWS CDK construct packages</p>
-      </div>
-
-      <div className="input-section">
-        <input
-          type="text"
-          value={packageName}
-          onChange={(e) => setPackageName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && analyzePackage()}
-          placeholder="Enter package name (e.g., @aws-cdk/aws-s3)"
-          className="package-input"
-        />
-        <button onClick={() => analyzePackage()} disabled={loading} className="analyze-button">
-          {loading ? 'Analyzing...' : 'Analyze'}
-        </button>
-      </div>
-
       {loading && (
         <div id="loading">
           <div className="spinner"></div>
@@ -233,5 +207,13 @@ export default function Home() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<div className="container"><div id="loading"><div className="spinner"></div><p>Loading...</p></div></div>}>
+      <PackageAnalyzer />
+    </Suspense>
   );
 }
