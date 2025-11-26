@@ -1,0 +1,10 @@
+{
+  "name": "analyze-package-function",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.940.0",
+    "@cdklabs/cdk-construct-analyzer": "latest",
+    "aws4fetch": "^1.0.20"
+  }
+}
