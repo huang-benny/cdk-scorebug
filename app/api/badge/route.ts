@@ -124,19 +124,22 @@ export async function GET(request: NextRequest) {
         const pillarCircleRadius = 20;
         const spacing = 60;
         const totalWidth = 100 + (pillars.length * spacing) + 40;
-        const height = 110;
+        const height = 135;
 
         let svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="${totalWidth}" height="${height}" style="background: #1a1a1a; border-radius: 8px;">`;
 
+        // Title
+        svgContent += `<text x="${totalWidth / 2}" y="20" text-anchor="middle" fill="#e0e0e0" font-family="Arial, sans-serif" font-size="12" font-weight="bold">${packageName}</text>`;
+
         // Total score (larger circle)
-        svgContent += createCircle(60, 45, totalScore, totalCircleRadius);
-        svgContent += `<text x="60" y="95" text-anchor="middle" fill="#888" font-family="Arial, sans-serif" font-size="10">TOTAL</text>`;
+        svgContent += createCircle(60, 65, totalScore, totalCircleRadius);
+        svgContent += `<text x="60" y="115" text-anchor="middle" fill="#888" font-family="Arial, sans-serif" font-size="10">TOTAL</text>`;
 
         // Pillar scores
         let xPos = 160;
         pillars.forEach(([pillar, score]) => {
-            svgContent += createCircle(xPos, 45, score as number, pillarCircleRadius);
-            svgContent += `<text x="${xPos}" y="95" text-anchor="middle" fill="#888" font-family="Arial, sans-serif" font-size="9">${pillar.toUpperCase()}</text>`;
+            svgContent += createCircle(xPos, 65, score as number, pillarCircleRadius);
+            svgContent += `<text x="${xPos}" y="115" text-anchor="middle" fill="#888" font-family="Arial, sans-serif" font-size="9">${pillar.toUpperCase()}</text>`;
             xPos += spacing;
         });
 
