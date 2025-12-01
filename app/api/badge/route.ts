@@ -60,7 +60,20 @@ export async function GET(request: NextRequest) {
         // Directly invoke Lambda with unauthenticated credentials (same as main page)
         const { LambdaClient, InvokeCommand } = await import('@aws-sdk/client-lambda');
         const { CognitoIdentityClient, GetIdCommand, GetCredentialsForIdentityCommand } = await import('@aws-sdk/client-cognito-identity');
-        const outputs = await import('@/amplify_outputs.json');
+        const fs = await import('fs/promises');
+        const path = await import('path');
+
+        // Load outputs - read from file system for better compatibility
+        let outputs;
+        try {
+            const outputsPath = path.join(process.cwd(), 'amplify_outputs.json');
+            const outputsContent = await fs.readFile(outputsPath, 'utf-8');
+            outputs = { default: JSON.parse(outputsContent) };
+            console.log('Loaded amplify_outputs.json from:', outputsPath);
+        } catch (e) {
+            console.error('Failed to load amplify_outputs.json:', e);
+            throw new Error('Amplify configuration not found');
+        }
 
         // Get unauthenticated credentials from Cognito Identity Pool
         const cognitoClient = new CognitoIdentityClient({
@@ -71,6 +84,8 @@ export async function GET(request: NextRequest) {
             IdentityPoolId: outputs.default.auth.identity_pool_id,
         }));
 
+        console.log('Got Cognito Identity ID:', getIdResponse.IdentityId);
+
         const credsResponse = await cognitoClient.send(new GetCredentialsForIdentityCommand({
             IdentityId: getIdResponse.IdentityId,
         }));
@@ -78,6 +93,8 @@ export async function GET(request: NextRequest) {
         if (!credsResponse.Credentials) {
             throw new Error('Failed to get unauthenticated credentials');
         }
+
+        console.log('Got credentials, invoking Lambda for package:', packageName);
 
         const lambdaClient = new LambdaClient({
             region: outputs.default.auth.aws_region,
@@ -101,17 +118,33 @@ export async function GET(request: NextRequest) {
 
         const response = await lambdaClient.send(command);
 
+        console.log('Lambda response status:', response.StatusCode);
+        console.log('Lambda function error:', response.FunctionError);
+
         if (response.FunctionError) {
             const errorPayload = JSON.parse(new TextDecoder().decode(response.Payload));
-            console.error('Lambda function error:', errorPayload);
+            console.error('Lambda function error payload:', errorPayload);
             throw new Error(`Lambda function error: ${JSON.stringify(errorPayload)}`);
         }
 
         const payload = JSON.parse(new TextDecoder().decode(response.Payload));
+        console.log('Lambda payload statusCode:', payload.statusCode);
 
         if (payload.statusCode !== 200) {
-            console.error('Failed to analyze package:', payload);
-            throw new Error(`Failed to analyze package: ${payload.body || 'Unknown error'}`);
+            console.error('Failed to analyze package. Status:', payload.statusCode);
+            console.error('Full payload:', JSON.stringify(payload, null, 2));
+
+            // Try to extract the actual error message
+            let errorDetail = 'Unknown error';
+            if (payload.body) {
+                try {
+                    const bodyObj = typeof payload.body === 'string' ? JSON.parse(payload.body) : payload.body;
+                    errorDetail = bodyObj.error || bodyObj.message || payload.body;
+                } catch (e) {
+                    errorDetail = payload.body;
+                }
+            }
+            throw new Error(`Lambda error (${payload.statusCode}): ${errorDetail}`);
         }
 
         const result = JSON.parse(payload.body);
@@ -152,10 +185,21 @@ export async function GET(request: NextRequest) {
         console.error('Badge API error:', error);
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
+        // Extract more details from the error
+        let displayMessage = errorMessage;
+        if (errorMessage.includes('Lambda error')) {
+            // Extract just the error part after the status code
+            const match = errorMessage.match(/Lambda error \(\d+\): (.+)/);
+            if (match) {
+                displayMessage = match[1];
+            }
+        }
+
         const errorSvg = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="400" height="100" style="background: #1a1a1a; border-radius: 8px;">
-        <text x="200" y="40" text-anchor="middle" fill="#ff4444" font-family="Arial, sans-serif" font-size="16">Error loading package score</text>
-        <text x="200" y="65" text-anchor="middle" fill="#888" font-family="Arial, sans-serif" font-size="10">${errorMessage.substring(0, 60)}</text>
+      <svg xmlns="http://www.w3.org/2000/svg" width="500" height="120" style="background: #1a1a1a; border-radius: 8px;">
+        <text x="250" y="40" text-anchor="middle" fill="#ff4444" font-family="Arial, sans-serif" font-size="16">Error loading package score</text>
+        <text x="250" y="70" text-anchor="middle" fill="#888" font-family="Arial, sans-serif" font-size="10">${displayMessage.substring(0, 80)}</text>
+        <text x="250" y="95" text-anchor="middle" fill="#666" font-family="Arial, sans-serif" font-size="9">Check console for full error</text>
       </svg>
     `.trim();
 
