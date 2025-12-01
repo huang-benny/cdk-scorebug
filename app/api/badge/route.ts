@@ -57,17 +57,41 @@ export async function GET(request: NextRequest) {
     }
 
     try {
+        // Directly invoke Lambda with unauthenticated credentials (same as main page)
         const { LambdaClient, InvokeCommand } = await import('@aws-sdk/client-lambda');
+        const { CognitoIdentityClient, GetIdCommand, GetCredentialsForIdentityCommand } = await import('@aws-sdk/client-cognito-identity');
         const outputs = await import('@/amplify_outputs.json');
+
+        // Get unauthenticated credentials from Cognito Identity Pool
+        const cognitoClient = new CognitoIdentityClient({
+            region: outputs.default.auth.aws_region,
+        });
+
+        const getIdResponse = await cognitoClient.send(new GetIdCommand({
+            IdentityPoolId: outputs.default.auth.identity_pool_id,
+        }));
+
+        const credsResponse = await cognitoClient.send(new GetCredentialsForIdentityCommand({
+            IdentityId: getIdResponse.IdentityId,
+        }));
+
+        if (!credsResponse.Credentials) {
+            throw new Error('Failed to get unauthenticated credentials');
+        }
 
         const lambdaClient = new LambdaClient({
             region: outputs.default.auth.aws_region,
+            credentials: {
+                accessKeyId: credsResponse.Credentials.AccessKeyId!,
+                secretAccessKey: credsResponse.Credentials.SecretKey!,
+                sessionToken: credsResponse.Credentials.SessionToken,
+            },
         });
 
         const functionArn = outputs.default.custom?.analyzePackageFunctionArn;
 
         if (!functionArn) {
-            throw new Error('Lambda function ARN not found');
+            throw new Error('Lambda function ARN not found in outputs');
         }
 
         const command = new InvokeCommand({
