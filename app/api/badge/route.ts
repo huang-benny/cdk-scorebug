@@ -2,26 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { CognitoIdentityClient, GetIdCommand, GetCredentialsForIdentityCommand } from '@aws-sdk/client-cognito-identity';
 import outputs from '@/amplify_outputs.json';
-
-type RGB = { r: number; g: number; b: number };
-
-function getScoreColor(score: number): RGB {
-    const ranges = [
-        { min: 75, start: { r: 132, g: 204, b: 22 }, end: { r: 0, g: 255, b: 0 } },
-        { min: 50, start: { r: 239, g: 68, b: 68 }, end: { r: 132, g: 204, b: 22 } },
-        { min: 0, start: { r: 185, g: 28, b: 28 }, end: { r: 239, g: 68, b: 68 } },
-    ];
-
-    const range = ranges.find(r => score >= r.min) || ranges[2];
-    const rangeSize = range.min === 75 ? 25 : range.min === 50 ? 25 : 50;
-    const t = (score - range.min) / rangeSize;
-
-    return {
-        r: Math.round(range.start.r + (range.end.r - range.start.r) * t),
-        g: Math.round(range.start.g + (range.end.g - range.start.g) * t),
-        b: Math.round(range.start.b + (range.end.b - range.start.b) * t),
-    };
-}
+import { getScoreColor } from '@/app/lib/utils';
 
 function createCircle(x: number, y: number, score: number, radius = 20): string {
     const circumference = 2 * Math.PI * radius;
